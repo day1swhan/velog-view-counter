@@ -1,0 +1,20 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "velog-view-counter",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-06-17",
+  "observability": {
+    "enabled": true
+  },
+  "workers_dev": true, // <WORKER_NAME>.<YOUR_ACCOUNT_SUBDOMAIN>.workers.dev
+  "placement": {
+    "mode": "smart"
+  },
+  "kv_namespaces": [
+    {
+      "binding": "WORKERS_KV", // 수정 금지 (index.ts 파일에 통합되어있음)
+      "id": "9876543210", // 프로덕션용, 배포시 포함되어야됨 9876543210
+      "preview_id": "1234567890" // 이건 로컬용, 아무 의미 없음
+    }
+  ]
+}
