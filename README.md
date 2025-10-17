@@ -6,33 +6,25 @@
 
 Cloudflare Workers를 이용해서 Velog 방문자 확인에 사용할 수 있는 페이지 뷰 카운터를 소개합니다.
 
-Workers, KV, Wrangler 등 Cloudflare 개발자 플랫폼에 익숙하지 않으신 분들은 아래 게시글들을 참고하여주시기 바랍니다.
+내부 작동 구조에 관심 있으신 분들은 [1x1 픽셀로 시작되는 Velog 조회수 확인 API 개발기](https://blog.day1swhan.com/articles/velog-view-counter?utm_source=github.com&utm_medium=referral)를 참고하여주시기 바랍니다.
 
-- [Cloudflare Workers & KV 이용해서 서버리스 방문자 카운팅 API 만들기(1/2)](https://blog.day1swhan.com/articles/cloudflare-workers-01): Workers, Workers KV 소개, 사용법 및 배포 방법을 설명합니다
+## 개발 배경 및 구현 아이디어
 
-- [Cloudflare Workers & KV 이용해서 서버리스 방문자 카운팅 API 만들기(2/2)](https://blog.day1swhan.com/articles/cloudflare-workers-02): CORS, 사용자 소유 도메인 적용 및 SSG(Static Site Generation) 빌드 블로그 통합 방법을 설명합니다
+- [Velog](https://velog.io)에 작성한 게시글들 조회수가 궁금한데 매번 로그인해서 확인하기 귀찮음
 
-- [Cloudflare Workers로 Express.js 스타일 API Gateway 프레임워크 만들기](https://blog.day1swhan.com/articles/cf-worker-api-gateway): **velog-view-counter**는 API 요청을 처리하기 위해서 [Express.js 스타일의 Workers API Gateway](https://github.com/day1swhan/cf-worker-api-gateway)를 사용합니다. 내부적인 작동 방식과 미들웨어 확장 방법을 설명합니다
-
-### 개발 배경 및 아이디어
-
-- [velog](https://velog.io)에 작성한 게시글들 조회수가 궁금한데 매번 로그인해서 들어가기 귀찮음
-
-- 조회수 API를 제공하면 개발자답게 자동 알림 전송을 구현할 수 있음. velog 내부 API 리버싱이 더 귀찮은 작업 같음
+- Velog 내부 조회수 API 리버싱해도 되지만 귀찮아질 것 같고 확장성(ex. 방문자 알림)이 떨어짐
 
 - 하지만 velog는 Markdown 문법을 이용한 게시글 작성을 지원함
 
-- 브라우저는 cross-site 도메인이여도 단순 이미지 호출에 대해서는 차단하지 않음
+- 브라우저는 cross-site 도메인이여도 단순 이미지 호출은 차단하지 않음
 
-- 게시글을 작성할 때 1x1 픽셀의 투명 이미지를 첨부하면, 게시글이 조회될 때마다 서버 측에서 호출 기록을 남길 수 있음
+- 게시글에 1x1 픽셀의 투명 이미지를 삽입하면, 게시글이 조회될 때마다 서버 측에서 호출 기록을 남길 수 있음
 
-### 작동 방식
+- 대부분의 Velog 유저들의 게시글은 하루 1,000명 이상의 방문자가 나오지 않음. 이 정도 트래픽에는 Workers KV를 이용해도 충분함
 
-- 이미지에 **식별 값**(slug)을 부여 후 CDN이 아닌 프로그래밍 가능한 Workers를 이용해 응답을 제공하고, 식별 값을 key로 사용해서 호출 기록을 카운팅하면 게시글의 대략적인 페이지 뷰를 구할 수 있음
+## 작동 방식
 
-- 대부분의 Velog 유저들의 게시글은 하루 1,000명 이상의 방문자가 나오지 않음
-
-  - 이 정도 트래픽에는 Workers KV를 이용해도 충분함
+- 이미지에 **식별 값**(slug)을 부여 후 CDN이 아닌 프로그래밍 가능한 Workers를 이용해 응답을 제공하고, 식별 값을 KV의 `Key prefix`로 사용해서 호출 기록을 저장하면, 간단하게 페이지 뷰를 구할 수 있음
 
 - **날짜**, **ip**, **userAgent**, **이미지 식별 값**을 `Hash` 함수를 이용해 key 값으로 만들면 최소한의 중복 방문 처리가 가능함
 
@@ -42,28 +34,36 @@ Workers, KV, Wrangler 등 Cloudflare 개발자 플랫폼에 익숙하지 않으�
 
 - Workers KV 무료 플랜은 하루 1,000개의 PUT, LIST를 지원함.
 
-  - **PUT**: 하루 **1,000개**의 방문자 카운팅 정보를 **저장 가능**
-  - **LIST**: 하루 **1,000개 이상**의 페이지 뷰 정보를 **제공 가능**
+  - **PUT**: 하루 **1,000개**의 방문자 카운팅 정보를 **저장** 가능
+  - **LIST**: 하루 **1,000개 이상**의 페이지 뷰 정보를 **제공** 가능
 
 - 페이지 뷰 조회 요청에는 LIST 명령을 사용하는데, 식별값(slug) 정보를 `prefix`로 이용해서 가져온 후 이를 단순 카운팅하면 됨
 
-  - 페이지 뷰 조회는 실시간성이 크게 중요하지 않으니 응답 값을 적절히 Cache하면 하루 1,000개 이상의 요청 처리가 가능해짐
+  - 페이지 뷰 조회는 실시간성이 크게 중요하지 않으니 **응답 값을 적절히 캐싱하면** 하루 1,000개 이상의 요청 처리가 가능해짐
 
-### 한계
+## 한계
 
-- **Eventual consistency**: Workers KV PUT 요청은 실시간이 아님. 실시간성이 꼭 필요한 사람이라면 [Durable Objects(DO)](https://developers.cloudflare.com/durable-objects/concepts/what-are-durable-objects/)를 사용해야 함
+아무래도 빠른 개발을 위해 단순한 저장소인 KV를 사용하다 보니 다음과 같은 한계가 있습니다.
 
-- **LIST Command**: LIST 명령을 이용한 카운팅 방식은 (페이지 뷰가 꾸준히 나온다는 가정하에)결국 시간이 지날수록 느려짐. DO 또는 [Analytics Engine](https://developers.cloudflare.com/analytics/analytics-engine/) 사용을 고려해야 함
+- **Eventual consistency**: Workers KV PUT 요청은 실시간이 아님. 실시간성이 꼭 필요하다면 [Durable Objects(DO)](https://developers.cloudflare.com/durable-objects/concepts/what-are-durable-objects/)를 사용해야 함.
 
-### 지원 예정
+- **LIST 의존**: LIST 명령을 이용한 카운팅 방식은 (페이지 뷰가 꾸준히 나온다는 가정하에) 시간이 지나면서 가져와야 하는 KEY 값들이 많아질수록 느려짐. Cron 작업으로 꾸준히 저장 구조를 업데이트하거나, DO 또는 [Analytics Engine](https://developers.cloudflare.com/analytics/analytics-engine/) 사용을 고려해야 함.
 
-- **Rate Limit**: 만약 본인이 인싸 velog 유저라면 시기와 질투에 눈이 먼 사용자들이 악의적 요청을 날릴 수 있음. 대비책이 필요함
-- **날짜별 검색**: API 추가로 지원할 예정. 데이터, 저장소 구조가 바뀔 수 있음
-- **세션별 검색**: API 추가로 지원할 예정. 현재 세션 정보는 각 포스팅에 대해서만 유효함. 개인정보보호 정책 검토 후 제공 예정
-- **기기별 검색**: API 추가로 지원할 예정. UserAgent 기반으로 대략적인 디바이스/브라우저/OS 파싱이 가능함
-- **서비스 API 제공**: 누구나 쉽게 이메일 인증만으로 사용할 수 있도록 API를 서비스 형태로 제공
-  - **웹훅/이메일**: 페이지 뷰 이벤트 발생시 요청 전송
-  - **custom campaign**: velog 포스팅별 설정된 이벤트(ex. 특정 조회수 도달)가 통합된 이미지 식별 값(slug) 제공
+## 지원 예정
+
+최대한 빠른 시일 내에 다음과 같은 기능들을 추가할 예정입니다.
+
+- **날짜별 정렬**: [서버리스 블로그 댓글 API 30분 만에 만들어보기](https://blog.day1swhan.com/articles/build-blog-comments-api-with-workers-kv?utm_source=github.com&utm_medium=referral)에서 최신 댓글 정렬을 위해 사용한 방식인 Unix Time을 이용하면 최신 세션 기준으로 정렬된 목록을 제공할 수 있습니다.
+- **API 보안**: 미들웨어 추가로 지원 예정. HTTP Authorization 헤더를 이용할 예정
+- **Rate Limit**: 인기 Velog 유저라면 시기와 질투에 눈이 먼 사용자들이 악의적 요청을 날릴 수 있으니 대비책이 필요합니다. 아마 전 해당되지 않아서 천천히 추가될 예정입니다.
+- **검색**: API 추가로 지원 예정.
+  - **날짜**: 특정 날짜, 기간별 검색 기능. KEY 구조 변경 필요
+  - **세션**: 특정 세션 활동 정보 검색 기능. 현재 세션 정보는 각 포스팅에 대해서 하루 동안 유효함. 개인정보보호 정책 검토 필요
+  - **브라우저/OS**: UserAgent에서 파싱 한 정보로 제공 예정. 정교하진 않아도 대략적인 파악 가능
+- **서비스 API**: 누구나 쉽게 **이메일 인증 + 개인키 발급**으로 사용할 수 있도록 API를 서비스 형태로 제공 예정
+  - **웹훅**: 페이지 뷰 이벤트 발생 시 POST 요청 제공. 개발자들이 좋아하는 Slack을 이용한 알림 가능
+  - **이메일**: 웹훅 처리가 귀찮은 사용자들을 위해 고전이지만 편리한 알림 기능
+  - **custom campaign**: 설정된 이벤트(ex. 특정 조회수 도달)가 통합된 이미지 식별 값(slug) 제공
 
 ## API Reference
 
@@ -111,8 +111,8 @@ x-cache: MISS # "HIT" 또는 "MISS" / 첫 요청 이후 5분간 캐싱
   "page": {
     "has_more": false
   },
-  "lastUpdate": "2025-10-14TXX:XX:XX.XXXZ",
-};
+  "lastUpdate": "2025-10-14TXX:XX:XX.XXXZ"
+}
 ```
 
 ### 페이지 세션 조회
@@ -134,14 +134,12 @@ x-cache: MISS # "HIT" 또는 "MISS" / 첫 요청 이후 5분간 캐싱
 {
   "id": "my-post-slug",
   "pageCount": 1,
-  "data": [
-    { "sid": "so0MIeFLTVg-fO82o51oxA" }
-  ],
+  "data": [{ "sid": "so0MIeFLTVg-fO82o51oxA" }],
   "page": {
     "has_more": false
-   },
-  "lastUpdate": "2025-10-14TXX:XX:XX.XXXZ",
-};
+  },
+  "lastUpdate": "2025-10-14TXX:XX:XX.XXXZ"
+}
 ```
 
 ### 페이지 세션 상세정보 조회
@@ -163,8 +161,8 @@ x-cache: MISS # "HIT" 또는 "MISS" / 첫 요청 이후 5분간 캐싱
 {
   "sid": "so0MIeFLTVg-fO82o51oxA",
   "userAgent": "curl/8.7.1",
-  "date": "2025-10-14TXX:XX:XX.XXXZ",
-};
+  "date": "2025-10-14TXX:XX:XX.XXXZ"
+}
 ```
 
 ## Quick Start
@@ -335,5 +333,12 @@ access-control-allow-origin: *
 cache-control: public, max-age=300, stale-while-revalidate=300
 x-cache: MISS
 
-{"id":"hello-world","pageCount":1,"page":{"has_more":false},"lastUpdate":"2025-10-15T12:19:56.228Z"}
+{
+  "id": "hello-world",
+  "pageCount": 1,
+  "page": {
+    "has_more": false
+  },
+  "lastUpdate": "2025-10-15TXX:XX:XX.XXXZ",
+}
 ```

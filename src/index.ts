@@ -109,7 +109,7 @@ app.get("/posts/:postId/sessions", async (req, context) => {
 
   const { list_complete, keys } = listKeys;
   const sessionIds: SessionId[] = keys.map((d) => {
-    const [prefix, postId, sid] = d.name.split(":");
+    const [event, postId, sid] = d.name.split(":");
     return { sid };
   });
 
