@@ -4,8 +4,12 @@ export type SessionId = {
 export type UserAgent = {
   userAgent: string;
 };
+type PageViewMeta = {
+  date: string;
+  hostname: string;
+};
 
-export type PageView = SessionId & UserAgent & { date: string };
+export type PageView = SessionId & UserAgent & PageViewMeta;
 
 export type PageViewInfo = {
   id: string;

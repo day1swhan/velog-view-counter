@@ -1,27 +1,45 @@
 import { WorkerAPIGateway } from "./router";
-import { simpleBotCheckMiddleware, verifyOriginMiddleware, corsMiddleware } from "./middleware";
+import {
+  middlewareSimpleBotChecker,
+  middlewareVerifyRefererInit,
+  middlewareCorsInit,
+  middlewareAuthInit,
+} from "./middleware";
 import { PageView, PageViewInfo, SessionId, SessionInfo } from "./models";
-import { pngBody, getSessionId, getDateISO } from "./constants";
+import { pngBody, createSessionId, getDateISO, getHostName } from "./constants";
 
 const app = new WorkerAPIGateway<Env>({ extended: true });
 
-// 개발 모드에서는 미들웨어 비활성화 해야합니다.
-app.use("/", simpleBotCheckMiddleware);
-app.use("/view.png", verifyOriginMiddleware);
-app.use("/posts", corsMiddleware);
+const API_TOKEN = "this-is-token";
+const ALLOW_ORIGINS = ["https://velog.io", "http://localhost:3000"];
+
+// 미들웨어 초기화
+const middlewareVerifyReferer = middlewareVerifyRefererInit<Env>({ origins: ALLOW_ORIGINS });
+const middlewareCors = middlewareCorsInit<Env>({ origins: ALLOW_ORIGINS, credentials: true }); // (선택) 순서 주의: cors → auth
+const middlewareAuth = middlewareAuthInit<Env>({ token: API_TOKEN });
+
+// 개발 모드에서는 편의를 위해 미들웨어 비활성화 해주세요.
+app.use("/", middlewareSimpleBotChecker); // 간단한 봇 체크 미들웨어 (user-agent)
+app.use("/view.png", middlewareVerifyReferer); // Referer 인증 미들웨어 (referer)
+app.use("/posts", middlewareCors); // CORS 미들웨어
+app.use("/posts", middlewareAuth); // API 인증 미들웨어 (x-api-token)
 
 app.get("/view.png", async (req, context) => {
   const { ctx, env, query } = context;
   const { id: postId } = query;
-  if (!postId) return Response.json({ message: "Bad Request, please check postId" }, { status: 400 });
 
+  if (!postId) {
+    return Response.json({ message: "Bad Request, please check postId" }, { status: 400 });
+  }
+
+  const hostname = getHostName(req) || "unknown";
   const ip = req.headers.get("x-real-ip") || req.headers.get("cf-connecting-ip") || "unknown";
   const userAgent = (req.headers.get("user-agent") || "unknown").trim();
 
-  const sid = await getSessionId({ ip, userAgent, postId });
+  const sid = await createSessionId({ ip, userAgent, postId });
 
   const key = `view:${postId}:${sid}`;
-  const value: PageView = { sid, userAgent, date: getDateISO() };
+  const value: PageView = { sid, userAgent, date: getDateISO(), hostname };
 
   // 비동기 처리 > 사용자 즉시 응답 가능
   ctx.waitUntil(env.WORKERS_KV.put(key, JSON.stringify(value)));
