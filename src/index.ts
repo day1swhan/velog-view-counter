@@ -1,12 +1,13 @@
 import { WorkerAPIGateway } from "./router";
 import {
-  middlewareSimpleBotChecker,
-  middlewareVerifyRefererInit,
   middlewareCorsInit,
-  middlewareAuthInit,
-} from "./middleware";
+  middlewareVerifyRefererInit,
+  middlewareVerifyTokenInit,
+  middlewareVerifyUserAgent,
+  getHostName,
+} from "./middlewares";
 import { PageView, PageViewInfo, SessionId, SessionInfo } from "./models";
-import { pngBody, createSessionId, getDateISO, getHostName } from "./constants";
+import { pngBody, createSessionId, getDateISO } from "./constants";
 
 const app = new WorkerAPIGateway<Env>({ extended: true });
 
@@ -15,13 +16,17 @@ const ALLOW_ORIGINS = ["https://velog.io", "http://localhost:3000"];
 
 // 미들웨어 초기화
 const middlewareVerifyReferer = middlewareVerifyRefererInit<Env>({ origins: ALLOW_ORIGINS });
-const middlewareCors = middlewareCorsInit<Env>({ origins: ALLOW_ORIGINS, credentials: true }); // (선택) 순서 주의: cors → auth
-const middlewareAuth = middlewareAuthInit<Env>({ token: API_TOKEN });
+const middlewareCors = middlewareCorsInit<Env>({
+  origins: ALLOW_ORIGINS,
+  headers: ["content-type", "x-api-token"],
+  credentials: true,
+}); // (선택) 순서 주의: cors → auth
+const middlewareAuth = middlewareVerifyTokenInit<Env>({ token: API_TOKEN });
 
 // 개발 모드에서는 편의를 위해 미들웨어 비활성화 해주세요.
-app.use("/", middlewareSimpleBotChecker); // 간단한 봇 체크 미들웨어 (user-agent)
+app.use("/", middlewareVerifyUserAgent); // 간단한 봇 체크 미들웨어 (user-agent)
 app.use("/view.png", middlewareVerifyReferer); // Referer 인증 미들웨어 (referer)
-app.use("/posts", middlewareCors); // CORS 미들웨어
+app.use("/posts", middlewareCors); // (선택) CORS 미들웨어
 app.use("/posts", middlewareAuth); // API 인증 미들웨어 (x-api-token)
 
 app.get("/view.png", async (req, context) => {
@@ -59,7 +64,7 @@ app.get("/posts/:postId/views", async (req, context) => {
   const { postId } = params;
   const { cursor } = query;
 
-  // 5분 동안 엣지 캐싱(중앙 저장소 접근 안해도 됨)
+  // 엣지 캐싱(5분 동안 중앙 저장소 접근 안해도 됨)
   const cacheKey = cursor ? `views:cache:${postId}:${cursor}` : `views:cache:${postId}`;
   const cacheValue = await env.WORKERS_KV.get<PageViewInfo>(cacheKey, { type: "json", cacheTtl: 300 });
   if (cacheValue) {
@@ -89,7 +94,7 @@ app.get("/posts/:postId/views", async (req, context) => {
     lastUpdate: getDateISO(),
   };
 
-  // 사용자 즉시 응답을 위한 비동기 캐시 업데이트(5분 후 자동 삭제)
+  // 비동기 캐시 업데이트(5분 후 자동 삭제) > 사용자 즉시 응답 가능
   ctx.waitUntil(env.WORKERS_KV.put(cacheKey, JSON.stringify(response), { expirationTtl: 300 }));
 
   return Response.json(response, {
@@ -106,7 +111,7 @@ app.get("/posts/:postId/sessions", async (req, context) => {
   const { postId } = params;
   const { cursor } = query;
 
-  // 5분 동안 엣지 캐싱(중앙 저장소 접근 안해도 됨)
+  // 엣지 캐싱(5분 동안 중앙 저장소 접근 안해도 됨)
   const cacheKey = cursor ? `sessions:cache:${postId}:${cursor}` : `sessions:cache:${postId}`;
   const cacheValue = await env.WORKERS_KV.get<SessionInfo>(cacheKey, { type: "json", cacheTtl: 300 });
   if (cacheValue) {
@@ -142,7 +147,7 @@ app.get("/posts/:postId/sessions", async (req, context) => {
     lastUpdate: getDateISO(),
   };
 
-  // 사용자 즉시 응답을 위한 비동기 캐시 업데이트(5분 후 자동 삭제)
+  // 비동기 캐시 업데이트(5분 후 자동 삭제) > 사용자 즉시 응답 가능
   ctx.waitUntil(env.WORKERS_KV.put(cacheKey, JSON.stringify(response), { expirationTtl: 300 }));
 
   return Response.json(response, {

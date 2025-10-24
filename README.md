@@ -39,14 +39,6 @@ Cloudflare Workers를 이용해서 Velog 방문자 확인에 사용할 수 있�
 
   - 페이지 뷰 조회는 실시간성이 크게 중요하지 않으니 **응답 값을 적절히 캐싱하면** 하루 1,000개 이상의 요청 처리가 가능해짐
 
-## 한계
-
-아무래도 빠른 개발을 위해 단순한 저장소인 KV를 사용하다 보니 다음과 같은 한계가 있습니다.
-
-- **Eventual consistency**: Workers KV PUT 요청은 실시간이 아님. 실시간성이 꼭 필요하다면 [Durable Objects(DO)](https://developers.cloudflare.com/durable-objects/concepts/what-are-durable-objects/)를 사용해야 함.
-
-- **LIST 의존**: LIST 명령을 이용한 카운팅 방식은 (페이지 뷰가 꾸준히 나온다는 가정하에) 시간이 지나면서 가져와야 하는 KEY 값들이 많아질수록 느려짐. Cron 작업으로 꾸준히 저장 구조를 업데이트하거나, DO 또는 [Analytics Engine](https://developers.cloudflare.com/analytics/analytics-engine/) 사용을 고려해야 함.
-
 ## 지원 기능
 
 - 트래킹 픽셀 등록
@@ -56,9 +48,10 @@ Cloudflare Workers를 이용해서 Velog 방문자 확인에 사용할 수 있�
 ## 미들웨어
 
 - **API 보안**:
+  - `middlewareCors`: (선택) CORS 미들웨어. 기본값: GET, OPTIONS(method) / content-type(headers) / false(credentials) / 300(maxAge)
   - `middlewareVerifyReferer`: HTTP 헤더(`Referer`) 검증을 통한 무단 호출 방지
-  - `middlewareCors`: (선택) CORS 미들웨어. 기본값: GET, OPTIONS / content-type, x-api-token / false(credentials) / 300(maxAge)
-  - `middlewareAuth`: HTTP 헤더(`x-api-token`)를 이용한 인증키 방식
+  - `middlewareVerifyToken`: HTTP 헤더(`x-api-token`)를 이용한 인증키 방식
+  - `middlewareVerifyUserAgent`: 간단한 봇 차단
 
 ## 지원 예정
 
@@ -99,7 +92,7 @@ Velog 게시글의 조회를 기록하기 위한 트래킹 픽셀. 포스팅 작
 ```
 
 - 본문은 1x1 PNG 이미지 데이터
-- Worker KV에 새로운 세션(조회) 정보가 비동기로 저장됨
+- Worker KV에 새로운 세션(조회) 정보가 **비동기로** 저장됨
 
 ```sh
 HTTP/1.1 200 OK
@@ -425,3 +418,11 @@ Access-Control-Allow-Credentials: true
   "lastUpdate": "2025-10-15TXX:XX:XX.XXXZ",
 }
 ```
+
+## 한계
+
+아무래도 빠른 개발을 위해 단순한 저장소인 KV를 사용하다 보니 다음과 같은 한계가 있습니다.
+
+- **Eventual consistency**: Workers KV PUT 요청은 실시간이 아님. 실시간성이 꼭 필요하다면 [Durable Objects(DO)](https://developers.cloudflare.com/durable-objects/concepts/what-are-durable-objects/)를 사용해야 함.
+
+- **LIST 의존**: LIST 명령을 이용한 카운팅 방식은 (페이지 뷰가 꾸준히 나온다는 가정하에) 시간이 지나면서 가져와야 하는 KEY 값들이 많아질수록 느려짐. Cron 작업으로 꾸준히 저장 구조를 업데이트하거나, DO 또는 [Analytics Engine](https://developers.cloudflare.com/analytics/analytics-engine/) 사용을 고려해야 함.

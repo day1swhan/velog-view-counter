@@ -20,17 +20,3 @@ export const createSessionId = async (input: { ip: string; userAgent: string; po
     .replace(/=+$/, "");
   return shortBase64;
 };
-
-export const getHostName = (req: Request): string | null => {
-  const origin = req.headers.get("origin");
-  if (origin) return new URL(origin).hostname;
-
-  const referer = req.headers.get("referer");
-  if (!referer) return null;
-
-  try {
-    return new URL(referer).hostname;
-  } catch {
-    return null;
-  }
-};
